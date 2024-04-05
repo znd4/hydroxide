@@ -48,19 +48,39 @@ func newClient() *protonmail.Client {
 	}
 }
 
-func askPass(prompt string) ([]byte, error) {
-	f := os.Stdin
-	if !term.IsTerminal(int(f.Fd())) {
-		// This can happen if stdin is used for piping data
-		// TODO: the following assumes Unix
-		var err error
-		if f, err = os.Open("/dev/tty"); err != nil {
-			return nil, err
+type prompter struct {
+	scanner *bufio.Scanner
+}
+
+func newPrompter() *prompter {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return &prompter{
+			scanner: bufio.NewScanner(os.Stdin),
 		}
-		defer f.Close()
+	}
+	return &prompter{}
+}
+
+func askPass(prompt string) ([]byte, error) {
+	return newPrompter().askPass(prompt)
+}
+
+func (r *prompter) askPass(prompt string) ([]byte, error) {
+	if r.scanner != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Reading password from stdin.\nk")
+		if !r.scanner.Scan() {
+			if err := r.scanner.Err(); err != nil {
+				return []byte{}, err
+			}
+			return []byte{}, io.ErrUnexpectedEOF
+		}
+		password := r.scanner.Bytes()
+		if len(password) == 0 {
+			return password, fmt.Errorf("zero length password")
+		}
 	}
 	fmt.Fprintf(os.Stderr, "%v: ", prompt)
-	b, err := term.ReadPassword(int(f.Fd()))
+	b, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err == nil {
 		fmt.Fprintf(os.Stderr, "\n")
 	}
@@ -262,16 +282,9 @@ func main() {
 	cmd := flag.Arg(0)
 	switch cmd {
 	case "auth":
-		var loginPassword, twoFactorTOTPCode string
-
-		authCmd.StringVar(&loginPassword, "password", "", "login password")
-		authCmd.StringVar(&twoFactorTOTPCode, "2fa-totp", "", "TOTP code for two-factor-authentication")
-		args := flag.Args()[1:]
-		err := authCmd.Parse(args)
-		if err != nil {
+		if err := authCmd.Parse(flag.Args()[1:]); err != nil {
 			log.Fatal(err)
 		}
-
 		username := authCmd.Arg(0)
 		if username == "" {
 			log.Fatal("usage: hydroxide auth <username>")
@@ -288,12 +301,14 @@ func main() {
 				log.Fatal(err)
 			}
 		}*/
-		if loginPassword != "" {
-		} else if pass, err := askPass("Password"); err != nil {
+		prompter := newPrompter()
+
+		pass, err := prompter.askPass("Password")
+		if err != nil {
 			log.Fatal(err)
-		} else {
-			loginPassword = string(pass)
 		}
+
+		loginPassword := string(pass)
 
 		authInfo, err := c.AuthInfo(username)
 		if err != nil {
@@ -310,14 +325,13 @@ func main() {
 				log.Fatal("Only TOTP is supported as a 2FA method")
 			}
 
-			if twoFactorTOTPCode == "" {
-				scanner := bufio.NewScanner(os.Stdin)
-				fmt.Printf("2FA TOTP code: ")
-				scanner.Scan()
-				twoFactorTOTPCode = scanner.Text()
+			codeBytes, err := prompter.askPass("2FA TOTP code")
+			if err != nil {
+				log.Fatal(err)
 			}
+			code := string(codeBytes)
 
-			scope, err := c.AuthTOTP(twoFactorTOTPCode)
+			scope, err := c.AuthTOTP(code)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -333,11 +347,13 @@ func main() {
 			if a.PasswordMode == protonmail.PasswordTwo {
 				prompt = "Mailbox password"
 			}
-			if pass, err := askPass(prompt); err != nil {
+
+			pass, err := prompter.askPass(prompt)
+			if err != nil {
 				log.Fatal(err)
-			} else {
-				mailboxPassword = string(pass)
 			}
+			mailboxPassword = string(pass)
+
 		}
 
 		keySalts, err := c.ListKeySalts()
