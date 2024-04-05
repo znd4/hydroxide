@@ -5,6 +5,7 @@ go 1.13
 require (
 	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c
 	github.com/boltdb/bolt v1.3.1
+	github.com/charmbracelet/huh v0.3.0
 	github.com/cloudflare/circl v1.3.6 // indirect
 	github.com/emersion/go-bcrypt v0.0.0-20170822072041-6e724a1baa63
 	github.com/emersion/go-imap v1.2.1

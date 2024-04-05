@@ -10,6 +10,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
+
+	"github.com/charmbracelet/huh"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
@@ -262,10 +265,7 @@ func main() {
 	cmd := flag.Arg(0)
 	switch cmd {
 	case "auth":
-		var loginPassword, twoFactorTOTPCode string
 
-		authCmd.StringVar(&loginPassword, "password", "", "login password")
-		authCmd.StringVar(&twoFactorTOTPCode, "2fa-totp", "", "TOTP code for two-factor-authentication")
 		args := flag.Args()[1:]
 		err := authCmd.Parse(args)
 		if err != nil {
@@ -277,22 +277,19 @@ func main() {
 			log.Fatal("usage: hydroxide auth <username>")
 		}
 
+		var loginPassword, twoFactorTOTPCode string
+
 		c := newClient()
 
 		var a *protonmail.Auth
-		/*if cachedAuth, ok := auths[username]; ok {
-			var err error
-			a, err = c.AuthRefresh(a)
-			if err != nil {
-				// TODO: handle expired token error
-				log.Fatal(err)
-			}
-		}*/
-		if loginPassword != "" {
-		} else if pass, err := askPass("Password"); err != nil {
+
+		err = huh.NewInput().
+			Title("Login Password").
+			Password(true).
+			Value(&loginPassword).
+			Run()
+		if err != nil {
 			log.Fatal(err)
-		} else {
-			loginPassword = string(pass)
 		}
 
 		authInfo, err := c.AuthInfo(username)
@@ -310,11 +307,12 @@ func main() {
 				log.Fatal("Only TOTP is supported as a 2FA method")
 			}
 
-			if twoFactorTOTPCode == "" {
-				scanner := bufio.NewScanner(os.Stdin)
-				fmt.Printf("2FA TOTP code: ")
-				scanner.Scan()
-				twoFactorTOTPCode = scanner.Text()
+			if err := huh.NewInput().
+				Title("2FA TOTP Code").
+				Password(true).
+				Value(&twoFactorTOTPCode).
+				Run(); err != nil {
+				log.Fatal(err)
 			}
 
 			scope, err := c.AuthTOTP(twoFactorTOTPCode)
@@ -333,10 +331,12 @@ func main() {
 			if a.PasswordMode == protonmail.PasswordTwo {
 				prompt = "Mailbox password"
 			}
-			if pass, err := askPass(prompt); err != nil {
+			if err := huh.NewInput().
+				Password(true).
+				Title(prompt).
+				Value(&mailboxPassword).
+				Run(); err != nil {
 				log.Fatal(err)
-			} else {
-				mailboxPassword = string(pass)
 			}
 		}
 
