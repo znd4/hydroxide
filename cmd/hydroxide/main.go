@@ -78,6 +78,7 @@ func (r *prompter) askPass(prompt string) ([]byte, error) {
 		if len(password) == 0 {
 			return password, fmt.Errorf("zero length password")
 		}
+		return password, nil
 	}
 	fmt.Fprintf(os.Stderr, "%v: ", prompt)
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
